@@ -896,7 +896,11 @@ const getIgnoreFileSearchPrune = (searchPatterns, files, normalizedOptions, gitR
 	const gitignoreOnlySearch = searchPatternsArray.every(pattern => pattern === GITIGNORE_FILES_PATTERN);
 	const searchesForGitignoreFiles = searchPatternsArray.includes(GITIGNORE_FILES_PATTERN);
 
-	return buildPrunePatternsAndGuards(getIgnoreRules(files), matcher, cwd, {gitignoreOnlySearch, searchesForGitignoreFiles});
+	return buildPrunePatternsAndGuards(getIgnoreRules(files), matcher, cwd, {
+		gitignoreOnlySearch,
+		searchesForGitignoreFiles,
+		fs: normalizedOptions.fs,
+	});
 };
 
 const withPrunedSearch = (normalizedOptions, prunePatterns) => prunePatterns.length === 0

@@ -499,8 +499,23 @@ export const convertIgnorePatternsForIgnoreFileSearch = (ignorePatterns, searchP
 	return ignorePatterns.filter(pattern => !expandBraceGroups(pattern).some(expanded => couldNameAnIgnoreFile(expanded)));
 };
 
+const isFileOnDisk = (directory, clean, cwd, statSync) => {
+	if (!statSync) {
+		return false;
+	}
+
+	const targetPath = path.resolve(directory, clean);
+	const cwdTargetPath = path.resolve(cwd, clean);
+	const stat = statSync(targetPath) ?? statSync(cwdTargetPath);
+	return Boolean(stat?.isFile());
+};
+
+const getRuleBody = clean => clean.startsWith('**/') && !clean.slice(3).includes('/')
+	? clean.slice(3)
+	: clean;
+
 // Compute the prune pattern for a single rule, or undefined when the rule cannot be skipped safely. The returned object also carries the guard name (if any) whose skipping relies on the rule set being complete.
-const getRulePrune = ({pattern, directory}, {cwd, matcher, hasNegations, canSkipAtAnyDepth, canMatchIgnoreFile, gitignoreOnlySearch}) => {
+const getRulePrune = ({pattern, directory}, {cwd, matcher, hasNegations, canSkipAtAnyDepth, canMatchIgnoreFile, gitignoreOnlySearch, statSync}) => {
 	if (isNegativePattern(pattern)) {
 		return undefined;
 	}
@@ -511,10 +526,14 @@ const getRulePrune = ({pattern, directory}, {cwd, matcher, hasNegations, canSkip
 		return undefined;
 	}
 
+	// A directory-only pattern like `build/` only matches directories. If a regular file
+	// with that name exists on disk, turning it into a fast-glob pattern would drop the file.
+	if (isDirectoryPattern && isFileOnDisk(directory, clean, cwd, statSync)) {
+		return undefined;
+	}
+
 	// A leading `**/` is gitignore's explicit spelling of "match at any depth"; for a single trailing segment it is identical to the bare name (`**/foo` == `foo`). Drop it so the rule takes the any-depth branch below instead of being treated as an anchored glob.
-	const body = clean.startsWith('**/') && !clean.slice(3).includes('/')
-		? clean.slice(3)
-		: clean;
+	const body = getRuleBody(clean);
 
 	if (canMatchIgnoreFile(finalSegment(body))) {
 		// Contents-only rules such as `foo/*` still allow traversal to `foo/.gitignore`, so the ignore-file search must read it before pruning foo's contents.
@@ -592,13 +611,25 @@ negations that could name one of them; see `negationsCouldRescue`.
 @param {boolean} [options.searchesForGitignoreFiles] - Whether the search includes `.gitignore` files.
 @returns {{patterns: string[], guardNames: string[]}} Patterns safe to pass to fast-glob, and the names their safety depends on.
 */
-export const buildPrunePatternsAndGuards = (rules, matcher, cwd, {gitignoreOnlySearch = false, searchesForGitignoreFiles = false} = {}) => {
+export const buildPrunePatternsAndGuards = (rules, matcher, cwd, {gitignoreOnlySearch = false, searchesForGitignoreFiles = false, fs: fsImplementation} = {}) => {
 	if (!matcher || !cwd || !rules || rules.length === 0) {
 		return {patterns: [], guardNames: []};
 	}
 
 	const negationNames = getNegationFinalSegments(rules);
 	const couldNameTheSamePath = createNameComparer();
+	const statSync = filePath => {
+		try {
+			if (fsImplementation?.statSync) {
+				return fsImplementation.statSync(filePath);
+			}
+
+			return fs.statSync(filePath);
+		} catch {
+			return undefined;
+		}
+	};
+
 	const context = {
 		cwd,
 		matcher,
@@ -606,6 +637,7 @@ export const buildPrunePatternsAndGuards = (rules, matcher, cwd, {gitignoreOnlyS
 		canSkipAtAnyDepth: pattern => !negationNames.some(name => couldNameTheSamePath(pattern, name)),
 		canMatchIgnoreFile: pattern => searchesForGitignoreFiles && couldNameTheSamePath(pattern, '.gitignore'),
 		gitignoreOnlySearch,
+		statSync,
 	};
 
 	const patterns = [];
@@ -626,4 +658,4 @@ export const buildPrunePatternsAndGuards = (rules, matcher, cwd, {gitignoreOnlyS
 	return {patterns, guardNames};
 };
 
-export const convertPatternsForFastGlob = (rules, matcher, cwd) => buildPrunePatternsAndGuards(rules, matcher, cwd).patterns;
+export const convertPatternsForFastGlob = (rules, matcher, cwd, fsImplementation) => buildPrunePatternsAndGuards(rules, matcher, cwd, {fs: fsImplementation}).patterns;

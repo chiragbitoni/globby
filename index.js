@@ -237,7 +237,7 @@ const buildIgnoreFilterResult = ({options, cwd, ignoreResult: {rules, matcher}, 
 	const finalPredicate = combinePredicate(matcher, globalMatcher);
 
 	// Patterns fast-glob can use to skip ignored directories while traversing. The predicate below stays authoritative, so this only ever needs to be safe, never exhaustive. They are returned separately from `options.ignore` so they skip directory expansion and the parent-directory adjustment, which would rebase them outside the scope their ignore files govern.
-	const pruneIgnorePatterns = convertPatternsForFastGlob(rules, matcher, cwd);
+	const pruneIgnorePatterns = convertPatternsForFastGlob(rules, matcher, cwd, options.fs);
 
 	return {
 		options,

@@ -625,3 +625,23 @@ test('custom ignore file can re-include a directory skipped by the search', asyn
 	t.deepEqual(clean(await globby('**/*', options)), expected);
 	t.deepEqual(clean(globbySync('**/*', options)), expected);
 });
+
+test('regular file matching a directory-only gitignore rule is not dropped', async t => {
+	const cwd = createRepository({
+		gitignore: 'build/\n',
+		files: ['build', 'src/build/out.js'],
+	});
+
+	const options = {
+		cwd,
+		gitignore: true,
+		dot: true,
+		ignore: ['.git/**'],
+	};
+	const expected = relevant(gitLsFiles(cwd));
+
+	t.deepEqual(relevant(await globby('**', options)), expected);
+	t.deepEqual(relevant(globbySync('**', options)), expected);
+	t.deepEqual(relevant(await globbyStream('**', options).toArray()), expected);
+});
+
